@@ -1,0 +1,465 @@
+import streamlit as st
+import pandas as pd
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+import streamlit as st
+import base64
+import os
+
+# --- FUNCIÓN DE CARGA SEGURA ---
+def cargar_imagen_base64(nombre_archivo):
+    if os.path.exists(nombre_archivo):
+        with open(nombre_archivo, "rb") as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    return ""
+
+# --- CARGA CON EL NOMBRE REAL DETECTADO ---
+# Intentamos primero con el nombre que aparece en tu explorador de archivos
+img_base64 = cargar_imagen_base64("image_7.png.jpeg")
+
+# Si por alguna razón lo renombras después, estas líneas sirven de respaldo:
+if not img_base64:
+    img_base64 = cargar_imagen_base64("image_7.png")
+if not img_base64:
+    img_base64 = cargar_imagen_base64("image_7.jpg")
+
+# 1. CONFIGURACIÓN E INTERFAZ
+st.set_page_config(page_title="AURA - Sistema Académico", page_icon="🤖", layout="wide")
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# --- ENCABEZADO UNIFICADO Y ESTILIZADO (MÁXIMA VISIBILIDAD) ---
+st.markdown(f"""
+    <style>
+    /* 1. Unificamos el fondo de toda la tarjeta en blanco puro */
+    .hero-card {{
+        background-color: #FFFFFF;
+        padding: 0px; /* Importante: 0 padding */
+        border-radius: 24px;
+        display: flex;
+        align-items: stretch; /* Estira las columnas a la misma altura */
+        justify-content: space-between;
+        border: 1px solid #F0F2F6;
+        margin-bottom: 25px;
+        overflow: hidden; /* Corta cualquier sobrante de la imagen */
+        box-shadow: 0 10px 25px rgba(0,0,0,0.03); /* Sombra suave */
+    }}
+
+    /* 2. Columna de Texto - Limpia y centrada */
+    .text-container {{
+        flex: 1.4; /* Proporción ideal para texto */
+        padding: 45px 50px; /* Relleno generoso y limpio */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        background-color: #FFFFFF; /* Fondo blanco explícito */
+    }}
+
+    /* 3. Columna de Imagen - ELIMINAMOS EL FONDO GRIS */
+    .image-container {{
+        flex: 1; /* Proporción para la imagen */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #FFFFFF; /* FONDO BLANCO PURO AHORA */
+        margin: 0px;
+        padding: 0px;
+        position: relative; /* Para control fino de posición */
+    }}
+
+    /* 4. Estilo de la Imagen - AJUSTE TOTAL */
+    .hero-img {{
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* Fuerza a la imagen a cubrir TODO el espacio sin deformarse */
+        display: block; /* Elimina espacio fantasma inferior */
+    }}
+
+    /* 5. Tipografía Estilizada */
+    .aura-title {{
+        font-family: 'Inter', sans-serif;
+        font-size: 85px; /* Más grande y visible */
+        font-weight: 900;
+        color: #1E3A8A;
+        line-height: 0.9; /* Pegado para impacto visual */
+        margin: 5px 0 15px 0;
+        letter-spacing: -4px; /* Letras juntas estilo AI moderna */
+    }}
+    </style>
+
+    <div class="hero-card">
+        <div class="text-container">
+            <p style="font-size: 20px; margin:0; font-weight:700; color: #1E3A8A;">¡Hola! Soy</p>
+            <h1 class="aura-title">AURA</h1>
+            <p style="color: #4B5563; font-size: 19px; margin-top: 5px; line-height: 1.3;">
+                Tu Asistente Virtual para la Comunidad Educativa de <b>Cundinamarca y Boyacá</b>
+            </p>
+            <div style="background:#DBEAFE; color:#1E40AF; padding:8px 18px; border-radius:10px; display:inline-block; font-size:14px; font-weight:bold; margin-top:20px;">
+                Agente de Utilidad para el Rendimiento Académico
+            </div>
+        </div>
+        <div class="image-container">
+            {"<img src='data:image/jpeg;base64," + img_base64 + "' class='hero-img'>" if img_base64 else "🖼️"}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# 2. CARGA DE DATOS (Corregida)
+@st.cache_data
+def cargar_bases_datos():
+    df_col, df_user = None, None
+    try:
+        # Usamos 'Colegios.xlsx' para ambas cosas ya que ahí están los usuarios
+        if os.path.exists('Colegios.xlsx'):
+            # Cargamos la base general
+            df_col = pd.read_excel('Colegios.xlsx', engine='openpyxl')
+            df_col.columns = df_col.columns.str.strip() 
+            
+            # Definimos df_user como el mismo archivo
+            df_user = df_col.copy()
+            
+            # Normalización de ID y Contraseña para comparación segura
+            # Usamos .replace('.0', '') por si Excel lee los IDs como números flotantes
+            df_user['ID_NORMAL'] = df_user['ID Alumno'].astype(str).str.replace('.0', '', regex=False).str.strip()
+            df_user['PASS_NORMAL'] = df_user['contraseña'].astype(str).str.replace('.0', '', regex=False).str.strip()
+            df_user['ACUDIENTE_NAME'] = df_user['Acudiente'].astype(str).str.strip()
+            df_user['ESTUDIANTE_NAME'] = df_user['Estudiante'].astype(str).str.strip()
+            
+            return df_col, df_user
+        else:
+            st.error("No se encontró el archivo 'Colegios.xlsx'. Asegúrate de que el nombre sea exacto.")
+            return None, None
+            
+    except Exception as e:
+        st.error(f"Error técnico al leer el Excel: {e}")
+        return None, None
+
+df_col, df_user = cargar_bases_datos()
+
+# 3. ESTADOS DE SESIÓN
+if "messages" not in st.session_state: st.session_state.messages = []
+if "logged_in" not in st.session_state: st.session_state.logged_in = False
+if "user_data" not in st.session_state: st.session_state.user_data = None
+if "materia_experta" not in st.session_state: st.session_state.materia_experta = None
+if "etapa_matricula" not in st.session_state: st.session_state.etapa_matricula = 0
+if "chat_bullying" not in st.session_state:
+    st.session_state.chat_bullying = [{"role": "assistant", "content": "Hola, soy AURA. Este es un espacio seguro y privado. ¿Quieres contarme qué está pasando?"}]
+if "bullying_interactuado" not in st.session_state: st.session_state.bullying_interactuado = False
+
+# 4. MENÚ LATERAL (Sidebar con robot)
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=100)
+    st.title("Menú Principal")
+    seleccion = st.radio("Ir a:", ["Inicio / Chat General", "1. Padres/Acudientes", "2. Aprende con AURA", "3. Denuncia el bullying","4. Docentes/Administrativos"])
+    
+    if st.session_state.logged_in:
+        st.divider()
+        st.write(f"👤 Bienvenido/a: **{st.session_state.user_data['ACUDIENTE_NAME']}**")
+        if st.button("🔴 Cerrar Sesión"):
+            st.session_state.logged_in = False
+            st.session_state.user_data = None
+            st.session_state.etapa_matricula = 0
+            st.rerun()
+
+# --- SECCIÓN 1: PADRES / ACUDIENTES (REEMPLAZAR ESTA SECCIÓN COMPLETA) ---
+if seleccion == "1. Padres/Acudientes":
+    # 1. LÓGICA DE LOGIN PERSISTENTE
+    if not st.session_state.logged_in:
+        st.subheader("🔐 Área Privada de Padres y Acudientes")
+        with st.form("login_aura"):
+            u = st.text_input("ID de Alumno").strip()
+            p = st.text_input("Contraseña", type="password").strip()
+            submit = st.form_submit_button("Ingresar")
+            
+            if submit:
+                if df_user is not None:
+                    # Buscamos coincidencia exacta usando las columnas normalizadas
+                    match = df_user[(df_user['ID_NORMAL'] == u) & (df_user['PASS_NORMAL'] == p)]
+                    if not match.empty:
+                        st.session_state.logged_in = True
+                        st.session_state.user_data = match.iloc[0].to_dict()
+                        st.rerun() # Esto recarga la página y activa el menú siguiente
+                    else:
+                        st.error("ID de Alumno o contraseña incorrectos. Por favor verifique.")
+                else:
+                    st.error("Error: No se pudo cargar la base de datos de usuarios.")
+    
+    # 2. MENÚ DE OPCIONES (SOLO VISIBLE SI LOGGED_IN ES TRUE)
+    else:
+        st.info(f"Bienvenido/a {st.session_state.user_data['ACUDIENTE_NAME']}")
+        
+        opcion_menu = st.selectbox("Seleccione una funcionalidad:", 
+                                  ["Seleccione...", 
+                                   "Matricula online", 
+                                   "Certificados", 
+                                   "Reportes de asistencia", 
+                                   "Estado de matricula", 
+                                   "Comunicados institucionales"])
+
+        # --- FUNCIONALIDAD: MATRÍCULA ONLINE (7 ETAPAS) ---
+        if opcion_menu == "Matricula online":
+            st.markdown("### 📝 Módulo de Matrícula Online")
+            
+            # ETAPA 1: BIENVENIDA
+            if st.session_state.etapa_matricula == 0:
+                st.markdown("#### PRIMERA ETAPA — BIENVENIDA Y VALIDACIÓN")
+                st.write("“Bienvenido al módulo de Matrícula Online. Aquí podrás realizar el proceso de inscripción y matrícula de manera rápida, segura”")
+                tipo_est = st.radio("¿La matrícula es para un estudiante nuevo o antiguo?", ["Estudiante nuevo", "Estudiante antiguo"])
+                if st.button("Continuar"):
+                    if tipo_est == "Estudiante antiguo":
+                        st.success("Acceso permitido para actualización de datos y renovación de matrícula.")
+                    else:
+                        st.session_state.etapa_matricula = 1
+                        st.rerun()
+
+            # ETAPA 2: DATOS DEL ESTUDIANTE
+            elif st.session_state.etapa_matricula == 1:
+                st.write("#### SEGUNDA ETAPA — DATOS DEL ESTUDIANTE")
+                with st.form("f_etapa2"):
+                    col1, col2 = st.columns(2)
+                    nombres = col1.text_input("Nombres completos")
+                    apellidos = col2.text_input("Apellidos completos")
+                    t_doc = st.selectbox("Tipo de documento", ["Registro civil", "Tarjeta de identidad", "Cédula de extranjería", "PPT"])
+                    n_doc = st.text_input("Número de documento")
+                    f_nac = st.date_input("Fecha de nacimiento")
+                    eps = st.text_input("EPS")
+                    grado = st.text_input("Grado al que aspira ingresar")
+                    # (Puedes agregar aquí el resto de campos: Municipio, sexo, etc.)
+                    if st.form_submit_button("Siguiente: Datos del Acudiente"):
+                        if nombres and n_doc:
+                            st.session_state.etapa_matricula = 2
+                            st.rerun()
+                        else: st.error("Complete los campos obligatorios.")
+
+            # ETAPA 3: DATOS DEL ACUDIENTE
+            elif st.session_state.etapa_matricula == 2:
+                st.write("#### TERCERA ETAPA — DATOS DEL PADRE, MADRE O ACUDIENTE")
+                with st.form("f_etapa3"):
+                    st.text_input("Nombre completo del acudiente", value=st.session_state.user_data['ACUDIENTE_NAME'])
+                    st.text_input("Parentesco")
+                    st.text_input("Número de celular")
+                    st.text_input("Correo electrónico")
+                    st.text_input("Persona autorizada para recoger al menor")
+                    if st.form_submit_button("Siguiente: Cargue de Documentos"):
+                        st.session_state.etapa_matricula = 3
+                        st.rerun()
+
+            # ETAPA 4: CARGUE DE DOCUMENTOS (SIMULACIÓN DRAG AND DROP)
+            elif st.session_state.etapa_matricula == 3:
+                st.write("#### CUARTA ETAPA — CARGUE DE DOCUMENTOS")
+                docs = ["Registro civil del estudiante", "Documento de identidad del acudiente", "Certificado de afiliación EPS"]
+                for d in docs:
+                    f = st.file_uploader(f"Subir {d} (PDF, JPG, PNG)", type=['pdf', 'jpg', 'png'])
+                    if f: st.success(f"“{d} cargado correctamente”")
+                
+                if st.button("Siguiente: Validación Inteligente"):
+                    st.session_state.etapa_matricula = 4
+                    st.rerun()
+
+            # ETAPA 5: VALIDACIÓN AUTOMÁTICA
+            elif st.session_state.etapa_matricula == 4:
+                st.write("#### QUINTA ETAPA — VALIDACIÓN AUTOMÁTICA")
+                with st.spinner("Simulando validación IA..."):
+                    st.warning("“Hemos detectado que falta adjuntar el certificado de afiliación EPS. Por favor súbelo para continuar.”")
+                    if st.button("Simular corrección y continuar"):
+                        st.session_state.etapa_matricula = 5
+                        st.rerun()
+
+            # ETAPA 6: RESUMEN
+            elif st.session_state.etapa_matricula == 5:
+                st.write("#### SEXTA ETAPA — RESUMEN DE MATRÍCULA")
+                st.markdown(f"""
+                - **Estudiante:** En proceso de registro
+                - **Acudiente:** {st.session_state.user_data['ACUDIENTE_NAME']}
+                - **Documentos:** 3 de 3 validados
+                """)
+                st.write("“¿Desea confirmar y enviar la solicitud de matrícula?”")
+                c1, c2 = st.columns(2)
+                if c1.button("Sí, confirmar"):
+                    st.session_state.etapa_matricula = 6
+                    st.rerun()
+                if c2.button("Editar información"):
+                    st.session_state.etapa_matricula = 1
+                    st.rerun()
+
+            # ETAPA 7: CONFIRMACIÓN FINAL
+            elif st.session_state.etapa_matricula == 6:
+                st.success("#### SÉPTIMA ETAPA — CONFIRMACIÓN FINAL")
+                st.balloons()
+                st.write("“Tu solicitud de matrícula ha sido registrada exitosamente. Número de radicado: **MAT-2026-00125**”")
+                st.write("Estado inicial: **En revisión**")
+                st.button("Descargar comprobante PDF")
+                if st.button("Regresar al menú"):
+                    st.session_state.etapa_matricula = 0
+                    st.rerun()
+
+        # --- FUNCIONALIDAD: CERTIFICADOS ---
+        elif opcion_menu == "Certificados":
+            st.subheader("📜 Menú de Certificados")
+            cert_tipo = st.selectbox("Seleccione el certificado que requiere:", 
+                                     ["Paz y Salvo", "Certificado de notas", "Constancia de matricula", "Certificado de buena conducta", "Constancia de estudio"])
+            
+            with st.form("form_certificados"):
+                st.text_input("Nombre del colegio")
+                st.text_input("Nombre del estudiante", value=st.session_state.user_data.get('ESTUDIANTE_NAME', ''))
+                st.text_input("Correo electrónico")
+                if st.form_submit_button("Guardar"):
+                    st.success("“estamos evaluando tu solicitud con el colegio, te compartiremos la información al correo que nos indicaste, ten un feliz día”")
+
+# --- SECCIÓN 2: APRENDE CON AURA (Materias por Grado) ---
+elif seleccion == "2. Aprende con AURA":
+    st.subheader("📚 Aula Virtual")
+    grado = st.number_input("Ingresa tu grado (1-11):", min_value=1, max_value=11, value=1)
+    
+    # Lógica de materias solicitada
+    m_basicas = ["Matemáticas", "Español", "Ciencias Naturales", "Ciencias Sociales", "Inglés", "Artes"]
+    m_superiores = m_basicas + ["Física", "Química", "Trigonometría", "Filosofía", "Economía", "Cálculo"]
+    
+    materias_disponibles = m_superiores if grado >= 9 else m_basicas
+    m_sel = st.selectbox("Selecciona la materia:", materias_disponibles)
+    
+    if st.button(f"Activar AURA experta en {m_sel}"):
+        st.session_state.materia_experta = m_sel
+        st.session_state.messages = [{"role": "assistant", "content": f"**Modo Experto en {m_sel} activado.** ¿Qué tema de grado {grado} quieres revisar?"}]
+        st.rerun()
+
+# --- SECCIÓN 3: APOYO PSICOLÓGICO Y DENUNCIA (AURA AMIGO CONFIDENTE) ---
+elif seleccion == "3. Denuncia el bullying":
+    st.subheader("🤝 AURA: Tu espacio seguro")
+    
+    # Inicializar estados específicos para este módulo si no existen
+    if "bullying_step" not in st.session_state: st.session_state.bullying_step = "conversando"
+    if "mensajes_bullying" not in st.session_state:
+        frases_cercania = [
+            "Hola, estoy aquí para ti, ¿Quieres hablar?",
+            "Hola... me di cuenta de que algo te preocupa. Aquí puedes desahogarte conmigo.",
+            "Hola, soy AURA. No estás solo/a en esto. Cuéntame, ¿qué está pasando?"
+        ]
+        import random
+        st.session_state.mensajes_bullying = [{"role": "assistant", "content": random.choice(frases_cercania)}]
+
+    # Mostrar historial del chat psicológico
+    for m in st.session_state.mensajes_bullying:
+        with st.chat_message(m["role"]): 
+            st.markdown(m["content"])
+
+    # Lógica de conversación (Paso 1: Empatía)
+    if st.session_state.bullying_step == "conversando":
+        if p_bull := st.chat_input("Escribe aquí cómo te sientes..."):
+            st.session_state.mensajes_bullying.append({"role": "user", "content": p_bull})
+            with st.chat_message("user"): st.markdown(p_bull)
+            
+            with st.chat_message("assistant"):
+                # System Prompt especializado para Psicología
+                sys_psicologa = """Eres una psicóloga experta en menores de edad. Tu objetivo es ser un 'amigo confidente'. 
+                Empatiza, anima, usa un lenguaje cálido y haz preguntas sobre sus emociones. 
+                IMPORTANTE: Solo cuando sientas que la persona ha compartido su problema y está más tranquila o receptiva, 
+                recomienda que la situación se puede reportar de forma anónima. 
+                Si decides recomendar la denuncia, termina tu mensaje exactamente con esta frase: '[SUGERIR_REPORTE]'"""
+                
+                r = client.chat.completions.create(
+                    model="gpt-4o", 
+                    messages=[{"role":"system","content":sys_psicologa}] + st.session_state.mensajes_bullying
+                )
+                txt_respuesta = r.choices[0].message.content
+                
+                # Detectar si la IA sugirió el reporte
+                if "[SUGERIR_REPORTE]" in txt_respuesta:
+                    txt_respuesta = txt_respuesta.replace("[SUGERIR_REPORTE]", "").strip()
+                    st.session_state.bullying_step = "consentimiento"
+                
+                st.markdown(txt_respuesta)
+                st.session_state.mensajes_bullying.append({"role": "assistant", "content": txt_respuesta})
+                st.rerun()
+
+    # Lógica de Consentimiento (Paso 2: ¿Desea denunciar?)
+    elif st.session_state.bullying_step == "consentimiento":
+        st.divider()
+        st.write("💬 **¿Te gustaría denunciar esta situación de manera anónima?**")
+        c1, c2 = st.columns(2)
+        if c1.button("✅ Sí, quiero reportarlo"):
+            st.session_state.bullying_step = "recopilando_datos"
+            st.rerun()
+        if c2.button("❌ No, prefiero solo hablar"):
+            st.session_state.bullying_step = "conversando"
+            st.info("Entiendo perfectamente. Aquí sigo para escucharte siempre que lo necesites.")
+            st.rerun()
+
+    # Lógica de Recopilación (Paso 3: Formulario)
+    elif st.session_state.bullying_step == "recopilando_datos":
+        st.warning("📝 Por favor, completa estos datos para ayudar a las directivas a intervenir.")
+        with st.form("form_denuncia"):
+            col_nom = st.text_input("Nombre de tu colegio")
+            grado_rep = st.text_input("Tu grado actual")
+            nombre_agresor = st.text_input("Nombre de la persona que ocasiona el bullying")
+            rol_agresor = st.selectbox("¿Quién es esa persona?", ["Estudiante", "Profesor", "Directivo"])
+            
+            grado_agresor = ""
+            if rol_agresor == "Estudiante":
+                grado_agresor = st.text_input("¿En qué grado está el estudiante que hace bullying?")
+            
+            if st.form_submit_button("Enviar Reporte Anónimo"):
+                # Aquí se guardaría la información (Simulación)
+                st.session_state.bullying_step = "finalizado"
+                st.rerun()
+
+    # Mensaje Final (Paso 4)
+    elif st.session_state.bullying_step == "finalizado":
+        st.success("✨ ¡Hecho! Informaré a las directivas para que tomen cartas en el asunto.")
+        st.balloons()
+        if st.button("Regresar al chat confidencial"):
+            st.session_state.bullying_step = "conversando"
+            st.rerun()
+# OPCIÓN 4: DOCENTES / ADMINISTRATIVOS (EL NUEVO MÓDULO)
+elif seleccion == "4. Docentes/Administrativos":
+    if not st.session_state.logged_in:
+        st.subheader("🔐 Acceso para Docentes y Administrativos")
+        with st.form("login_docentes"):
+            u = st.text_input("Usuario (ID)").strip()
+            p = st.text_input("Contraseña", type="password").strip()
+            if st.form_submit_button("Ingresar al Panel"):
+                match = df_user[(df_user['ID_NORMAL'] == u) & (df_user['PASS_NORMAL'] == p)]
+                if not match.empty:
+                    st.session_state.logged_in = True
+                    st.session_state.user_data = match.iloc[0].to_dict()
+                    st.rerun()
+                else: st.error("Credenciales no válidas")
+    else:
+        st.success(f"Panel Administrativo - {st.session_state.user_data['Institución Educativa']}")
+        opc_adm = st.selectbox("Seleccione gestión:", ["Seleccione...", "Reportes", "Solicitudes Recibidas"])
+        
+        if opc_adm == "Reportes":
+            st.subheader("📊 Reportes y Estadísticas")
+            col1, col2 = st.columns(2)
+            col1.metric("Total Alumnos", len(df_user))
+            col2.metric("Sede", "Principal")
+            st.write("### Listado de Control Académico")
+            st.dataframe(df_user[['Estudiante', 'Fecha entrega boletines', 'Cuenta con servicio de restaurante']])
+
+        elif opc_adm == "Solicitudes Recibidas":
+            st.subheader("📩 Bandeja de Trámites")
+            st.write("Solicitudes pendientes de procesar:")
+            st.table([
+                {"ID": "MAT-001", "Tipo": "Matrícula Nueva", "Estado": "Pendiente Documentos"},
+                {"ID": "CERT-05", "Tipo": "Certificado Notas", "Estado": "En Revisión"}
+            ])
+
+# CHAT GENERAL (INICIO)
+elif seleccion == "Inicio / Chat General":
+    st.subheader("🤖 Chat con AURA")
+    # Lógica de chat general...
+
+# --- MOTOR DE CHAT GENERAL ---
+if seleccion != "3. Denuncia el bullying":
+    st.divider()
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]): st.markdown(m["content"])
+    if prompt := st.chat_input("Consulta general..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("assistant"):
+            sys = f"Eres AURA experta en {st.session_state.materia_experta}" if st.session_state.materia_experta else "Eres AURA asistente."
+            res = client.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":sys}]+st.session_state.messages)
+            st.session_state.messages.append({"role": "assistant", "content": res.choices[0].message.content})
+        st.rerun()
+        
