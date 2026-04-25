@@ -1,0 +1,42 @@
+[
+    {
+        "fecha": "2026-04-27",
+        "evento": "Inicio de Evaluaciones Bimestrales",
+        "tipo": "Acad\u00e9mico"
+    },
+    {
+        "fecha": "2026-05-01",
+        "evento": "D\u00eda del Trabajo (Festivo)",
+        "tipo": "Festivo"
+    },
+    {
+        "fecha": "2026-05-15",
+        "evento": "D\u00eda del Maestro",
+        "tipo": "Celebraci\u00f3n"
+    },
+    {
+        "fecha": "2026-05-18",
+        "evento": "D\u00eda de la Ascensi\u00f3n (Festivo)",
+        "tipo": "Festivo"
+    },
+    {
+        "fecha": "2026-05-22",
+        "evento": "Entrega de Reportes Parciales",
+        "tipo": "Administrativo"
+    },
+    {
+        "fecha": "2026-06-01",
+        "evento": "Lanzamiento Proyecto Transversal de Reciclaje",
+        "tipo": "Proyecto"
+    },
+    {
+        "fecha": "2026-06-15",
+        "evento": "Inicio de Receso Escolar (Vacaciones)",
+        "tipo": "Acad\u00e9mico"
+    },
+    {
+        "fecha": "2026-04-25",
+        "evento": "Examen de matem\u00e1ticas",
+        "tipo": "Acad\u00e9mico"
+    }
+]

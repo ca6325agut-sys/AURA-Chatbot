@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 import streamlit as st
 import base64
 import os
+from datetime import datetime
+# Agrégalo arriba de todo para que el programa siempre sepa qué es df_citas
+df_citas = pd.DataFrame()
+
+# Define esto aquí arriba para que sea fácil de editar luego
+docentes_lista = ["Ana Gómez (Matemáticas)", "Luis Pérez (Coordinador)", "Marta Ruiz (Lenguaje)"]
+horas_disponibles = ["08:00", "09:00", "10:00", "11:00", "14:00", "15:00"]
 
 # --- FUNCIÓN DE CARGA SEGURA ---
 def cargar_imagen_base64(nombre_archivo):
@@ -151,7 +158,7 @@ if "bullying_interactuado" not in st.session_state: st.session_state.bullying_in
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=100)
     st.title("Menú Principal")
-    seleccion = st.radio("Ir a:", ["Inicio / Chat General", "1. Padres/Acudientes", "2. Aprende con AURA", "3. Denuncia el bullying","4. Docentes/Administrativos"])
+    seleccion = st.radio("Ir a:", ["Inicio / Chat General", "1. Padres/Acudientes", "2. Aprende con AURA", "3. Espacio Seguro","4. Docentes/Administrativos"])
     
     if st.session_state.logged_in:
         st.divider()
@@ -162,9 +169,16 @@ with st.sidebar:
             st.session_state.etapa_matricula = 0
             st.rerun()
 
-# --- SECCIÓN 1: PADRES / ACUDIENTES (REEMPLAZAR ESTA SECCIÓN COMPLETA) ---
+# --- SECCIÓN 1: PADRES / ACUDIENTES CORREGIDA ---
+docentes = [
+    {"id": 1, "nombre": "Ana Gómez", "rol": "Matemáticas"},
+    {"id": 2, "nombre": "Luis Pérez", "rol": "Coordinador"},
+    {"id": 3, "nombre": "Marta Ruiz", "rol": "Lenguaje"},
+]
+horas_disponibles = ["08:00", "09:00", "10:00", "11:00", "14:00", "15:00"]
+df_citas = pd.DataFrame() # Esto crea una tabla vacía por defecto
 if seleccion == "1. Padres/Acudientes":
-    # 1. LÓGICA DE LOGIN PERSISTENTE
+    # 1. LÓGICA DE LOGIN
     if not st.session_state.logged_in:
         st.subheader("🔐 Área Privada de Padres y Acudientes")
         with st.form("login_aura"):
@@ -174,28 +188,29 @@ if seleccion == "1. Padres/Acudientes":
             
             if submit:
                 if df_user is not None:
-                    # Buscamos coincidencia exacta usando las columnas normalizadas
                     match = df_user[(df_user['ID_NORMAL'] == u) & (df_user['PASS_NORMAL'] == p)]
                     if not match.empty:
                         st.session_state.logged_in = True
                         st.session_state.user_data = match.iloc[0].to_dict()
-                        st.rerun() # Esto recarga la página y activa el menú siguiente
+                        st.rerun()
                     else:
-                        st.error("ID de Alumno o contraseña incorrectos. Por favor verifique.")
+                        st.error("ID de Alumno o contraseña incorrectos.")
                 else:
-                    st.error("Error: No se pudo cargar la base de datos de usuarios.")
+                    st.error("Error: Base de datos de usuarios no encontrada.")
     
-    # 2. MENÚ DE OPCIONES (SOLO VISIBLE SI LOGGED_IN ES TRUE)
+    # 2. CONTENIDO PROTEGIDO (Solo entra aquí si ya se logueó)
     else:
         st.info(f"Bienvenido/a {st.session_state.user_data['ACUDIENTE_NAME']}")
         
+        # Aquí unificamos el nombre a 'opcion_menu'
         opcion_menu = st.selectbox("Seleccione una funcionalidad:", 
                                   ["Seleccione...", 
                                    "Matricula online", 
                                    "Certificados", 
                                    "Reportes de asistencia", 
                                    "Estado de matricula", 
-                                   "Comunicados institucionales"])
+                                   "Comunicados institucionales",
+                                   "Agendar Cita / Acompañamiento"])
 
         # --- FUNCIONALIDAD: MATRÍCULA ONLINE (7 ETAPAS) ---
         if opcion_menu == "Matricula online":
@@ -301,11 +316,114 @@ if seleccion == "1. Padres/Acudientes":
                                      ["Paz y Salvo", "Certificado de notas", "Constancia de matricula", "Certificado de buena conducta", "Constancia de estudio"])
             
             with st.form("form_certificados"):
-                st.text_input("Nombre del colegio")
-                st.text_input("Nombre del estudiante", value=st.session_state.user_data.get('ESTUDIANTE_NAME', ''))
-                st.text_input("Correo electrónico")
+                colegio = st.text_input("Nombre del colegio")
+                estudiante_nom = st.text_input("Nombre del estudiante", value="", placeholder="Escriba el nombre completo")
+                correo_envio = st.text_input("Correo electrónico")
+                
                 if st.form_submit_button("Guardar"):
-                    st.success("“estamos evaluando tu solicitud con el colegio, te compartiremos la información al correo que nos indicaste, ten un feliz día”")
+                    if colegio and estudiante_nom and correo_envio:
+                        # 1. PREPARAR LA FILA PARA TU EXCEL (Solicitudes.xlsx)
+                        nueva_solicitud = {
+                            "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "Remitente": st.session_state.user_data.get('ACUDIENTE_NAME', 'Acudiente'),
+                            "Documento/ID": st.session_state.user_data.get('ID_NORMAL', 'N/A'),
+                            "Tipo de tramite": f"SOLICITUD: {cert_tipo}", # Aquí guarda si es Paz y Salvo, Notas, etc.
+                            "Descripción": f"Colegio: {colegio} | Enviar a: {correo_envio} | Estudiante: {estudiante_nom}",
+                            "Estado": "En revisión"
+                        }
+                        
+                        # 2. LÓGICA DE GUARDADO EN EL ARCHIVO EXISTENTE
+                        archivo_sol = "Solicitudes.xlsx"
+                        try:
+                            if os.path.exists(archivo_sol):
+                                df_ex = pd.read_excel(archivo_sol)
+                                df_final = pd.concat([df_ex, pd.DataFrame([nueva_solicitud])], ignore_index=True)
+                            else:
+                                df_final = pd.DataFrame([nueva_solicitud])
+                            
+                            df_final.to_excel(archivo_sol, index=False)
+                            st.success("✅ ¡Hecho! Estamos evaluando tu solicitud con el colegio, te compartiremos la información al correo indicado.")
+                            st.balloons()
+                        except Exception as e:
+                            st.error(f"Error al guardar en el Excel: {e}. Asegúrate de cerrar el archivo si lo tienes abierto.")
+                    else:
+                        st.warning("Por favor, completa todos los campos del formulario.")  
+        # --- OPCIÓN: CITAS (CORREGIDA) ---
+        elif opcion_menu == "Agendar Cita / Acompañamiento":
+            st.subheader("📅 Citas y Acompañamiento")
+            
+            col1, col2 = st.columns([1, 1.5])
+            
+            with col1:
+                fecha_sel = st.date_input("1. Selecciona la fecha:", min_value=datetime.now())
+                docente_sel = st.selectbox("2. Selecciona el docente:", [d["nombre"] for d in docentes])
+                
+                # Lógica de filtrado de horas
+                archivo_sol = "solicitudes.xlsx"
+                horas_libres = horas_disponibles.copy()
+                
+                if os.path.exists(archivo_sol):
+                    df_citas = pd.read_excel(archivo_sol)
+                # Verificamos que la columna exista para no dar error
+                if 'Tipo de tramite' in df_citas.columns:
+                    fecha_str = str(fecha_sel)
+                    # Buscamos citas agendadas para este docente y fecha
+                    # Filtramos en la columna Descripción que es donde guardas todo
+                    ocupadas = df_citas[
+                        (df_citas['Tipo de tramite'] == "CITA AGENDADA") & 
+                        (df_citas['Descripción'].str.contains(docente_sel, na=False)) & 
+                        (df_citas['Descripción'].str.contains(fecha_str, na=False))
+                    ]
+                    
+                    # Extraemos las horas que ya están ocupadas
+                    horas_ocupadas = []
+                    for desc in ocupadas['Descripción']:
+                        for h in horas_disponibles:
+                            if h in str(desc):
+                                horas_ocupadas.append(h)
+                    
+                    horas_libres = [h for h in horas_disponibles if h not in horas_ocupadas]
+                else:
+                    horas_libres = horas_disponibles.copy()
+                    ['Hora Cita'].tolist()
+                    horas_libres = [h for h in horas_disponibles if h not in ocupadas]
+
+            with col2:
+                with st.form("form_citas"):
+                    estudiante = st.text_input("Nombre del Estudiante", value=st.session_state.user_data.get('ESTUDIANTE_NAME', ''))
+                    tipo_cita = st.selectbox("Tipo de cita", ["Académico", "Comportamiento"])
+                    hora_sel = st.selectbox("Selecciona una hora disponible", horas_libres if horas_libres else ["Sin cupos"])
+                    motivo = st.text_area("Motivo de la cita")
+                    
+                    if st.form_submit_button("Agendar Cita"):
+                        if not horas_libres:
+                            st.error("No hay turnos para este docente en la fecha seleccionada.")
+                        elif estudiante and motivo:
+                            nueva_cita = {  
+                                "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "Remitente": st.session_state.user_data.get('ACUDIENTE_NAME', 'Acudiente'),
+                            "Documento/ID": st.session_state.user_data.get('ID_NORMAL', 'N/A'),
+                            "Tipo de tramite": "CITA AGENDADA",
+                            "Descripción": f"Estudiante: {estudiante} | Docente: {docente_sel} | Fecha: {fecha_sel} | Hora: {hora_sel} | Motivo: {motivo}",
+                            "Estado": "Programada"}
+                           # 2. LÓGICA DE GUARDADO
+                        archivo_sol = "Solicitudes.xlsx"
+                        
+                        try:
+                            if os.path.exists(archivo_sol):
+                                df_ex = pd.read_excel(archivo_sol)
+                                df_final = pd.concat([df_ex, pd.DataFrame([nueva_cita])], ignore_index=True)
+                            else:
+                                df_final = pd.DataFrame([nueva_cita])
+                            
+                            # Guardar los cambios
+                            df_final.to_excel(archivo_sol, index=False)
+                            st.success(f"✅ Cita registrada en Solicitudes.xlsx para el {fecha_sel} a las {hora_sel}")
+                            st.balloons()
+                        except Exception as e:
+                            st.error(f"Error al guardar: {e}. Asegúrate de que el archivo Excel esté cerrado.")
+                    else:
+                        st.warning("Por favor completa el nombre del estudiante y el motivo.")
 
 # --- SECCIÓN 2: APRENDE CON AURA (Materias por Grado) ---
 elif seleccion == "2. Aprende con AURA":
@@ -325,7 +443,7 @@ elif seleccion == "2. Aprende con AURA":
         st.rerun()
 
 # --- SECCIÓN 3: APOYO PSICOLÓGICO Y DENUNCIA (AURA AMIGO CONFIDENTE) ---
-elif seleccion == "3. Denuncia el bullying":
+elif seleccion == "3. Espacio Seguro":
     st.subheader("🤝 AURA: Tu espacio seguro")
     
     # Inicializar estados específicos para este módulo si no existen
@@ -436,15 +554,46 @@ elif seleccion == "4. Docentes/Administrativos":
             col2.metric("Sede", "Principal")
             st.write("### Listado de Control Académico")
             st.dataframe(df_user[['Estudiante', 'Fecha entrega boletines', 'Cuenta con servicio de restaurante']])
-
         elif opc_adm == "Solicitudes Recibidas":
-            st.subheader("📩 Bandeja de Trámites")
-            st.write("Solicitudes pendientes de procesar:")
-            st.table([
-                {"ID": "MAT-001", "Tipo": "Matrícula Nueva", "Estado": "Pendiente Documentos"},
-                {"ID": "CERT-05", "Tipo": "Certificado Notas", "Estado": "En Revisión"}
-            ])
+            st.subheader("📩 Bandeja de Solicitudes Recibidas")
+            archivo_sol = "Solicitudes.xlsx"
 
+            # Verificamos si el archivo existe antes de hacer nada
+            if os.path.exists(archivo_sol):
+                # LEEMOS EL ARCHIVO AQUÍ (Esto define df_citas localmente)
+                df_citas = pd.read_excel(archivo_sol)
+                
+                if not df_citas.empty:
+                    # Mostramos la tabla al administrativo
+                    st.dataframe(df_citas, use_container_width=True)
+                    
+                    st.divider()
+                    st.subheader("🛠️ Gestionar Solicitud")
+                    
+                    # El usuario elige qué fila quiere cambiar
+                    fila_idx = st.number_input("Seleccione el índice de la fila a gestionar:", 
+                                               min_value=0, max_value=len(df_citas)-1, step=1)
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if st.button("✅ Enviar / Aprobar"):
+                            # Accedemos a df_citas que definimos arriba
+                            df_citas.at[fila_idx, 'Estado'] = "Enviado / Aprobado"
+                            df_citas.to_excel(archivo_sol, index=False)
+                            st.success(f"Fila {fila_idx} actualizada con éxito.")
+                            st.rerun() # Recarga para ver el cambio
+                            
+                    with col2:
+                        if st.button("❌ Rechazar"):
+                            df_citas.at[fila_idx, 'Estado'] = "Rechazado"
+                            df_citas.to_excel(archivo_sol, index=False)
+                            st.error(f"Fila {fila_idx} ha sido rechazada.")
+                            st.rerun()
+                else:
+                    st.info("El archivo está vacío. No hay solicitudes que mostrar.")
+            else:
+                st.warning("Aún no se ha creado el archivo 'Solicitudes.xlsx'.")
 # CHAT GENERAL (INICIO)
 elif seleccion == "Inicio / Chat General":
     st.subheader("🤖 Chat con AURA")
@@ -462,4 +611,3 @@ if seleccion != "3. Denuncia el bullying":
             res = client.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":sys}]+st.session_state.messages)
             st.session_state.messages.append({"role": "assistant", "content": res.choices[0].message.content})
         st.rerun()
-        
