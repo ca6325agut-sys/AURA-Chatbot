@@ -13,6 +13,24 @@ df_citas = pd.DataFrame()
 # Define esto aquí arriba para que sea fácil de editar luego
 docentes_lista = ["Ana Gómez (Matemáticas)", "Luis Pérez (Coordinador)", "Marta Ruiz (Lenguaje)"]
 horas_disponibles = ["08:00", "09:00", "10:00", "11:00", "14:00", "15:00"]
+# --- SECCIÓN DE CONTACTO EN LA BARRA LATERAL ---
+with st.sidebar:
+    st.divider()
+    with st.expander("📞 ¡Contáctanos!", expanded=False):
+        st.write("**Atención inmediata:**")
+        st.write("📲 [312 456 7890](https://wa.me/573124567890)")
+        st.write("📧 [soporte@aura-segura.edu.co](mailto:soporte@aura-segura.edu.co)")
+        
+        st.write("---")
+        st.write("**Nuestras Redes Sociales:**")
+        
+        # Iconos y enlaces simbólicos
+        st.markdown("""
+        🔵 [Facebook - Aura Segura](https://facebook.com)  
+        📸 [Instagram - @AuraSegura](https://instagram.com)  
+        🎵 [TikTok - @AuraSegura_Edu](https://tiktok.com)
+        """)
+        st.caption("Horario de atención: Lun - Vie (7am - 4pm)")
 
 # --- FUNCIÓN DE CARGA SEGURA ---
 def cargar_imagen_base64(nombre_archivo):
@@ -446,89 +464,87 @@ elif seleccion == "2. Aprende con AURA":
 elif seleccion == "3. Espacio Seguro":
     st.subheader("🤝 AURA: Tu espacio seguro")
     
-    # Inicializar estados específicos para este módulo si no existen
-    if "bullying_step" not in st.session_state: st.session_state.bullying_step = "conversando"
-    if "mensajes_bullying" not in st.session_state:
-        frases_cercania = [
-            "Hola, estoy aquí para ti, ¿Quieres hablar?",
-            "Hola... me di cuenta de que algo te preocupa. Aquí puedes desahogarte conmigo.",
-            "Hola, soy AURA. No estás solo/a en esto. Cuéntame, ¿qué está pasando?"
-        ]
-        import random
-        st.session_state.mensajes_bullying = [{"role": "assistant", "content": random.choice(frases_cercania)}]
+    opc_espacio = st.sidebar.selectbox("Opciones del Espacio Seguro", ["Chat de Orientación", "Solicitudes recibidas"])
 
-    # Mostrar historial del chat psicológico
-    for m in st.session_state.mensajes_bullying:
-        with st.chat_message(m["role"]): 
-            st.markdown(m["content"])
+    if opc_espacio == "Chat de Orientación":
+        # 1. Estados iniciales
+        if "bullying_step" not in st.session_state: st.session_state.bullying_step = "conversando"
+        if "mensajes_bullying" not in st.session_state:
+            st.session_state.mensajes_bullying = [{"role": "assistant", "content": "Hola... soy AURA. Me doy cuenta de que algo te inquieta. Aquí puedes soltar todo lo que sientes, no te voy a juzgar. ¿Qué tienes en tu corazón hoy?"}]
 
-    # Lógica de conversación (Paso 1: Empatía)
-    if st.session_state.bullying_step == "conversando":
-        if p_bull := st.chat_input("Escribe aquí cómo te sientes..."):
-            st.session_state.mensajes_bullying.append({"role": "user", "content": p_bull})
-            with st.chat_message("user"): st.markdown(p_bull)
-            
-            with st.chat_message("assistant"):
-                # System Prompt especializado para Psicología
-                sys_psicologa = """Eres una psicóloga experta en menores de edad. Tu objetivo es ser un 'amigo confidente'. 
-                Empatiza, anima, usa un lenguaje cálido y haz preguntas sobre sus emociones. 
-                IMPORTANTE: Solo cuando sientas que la persona ha compartido su problema y está más tranquila o receptiva, 
-                recomienda que la situación se puede reportar de forma anónima. 
-                Si decides recomendar la denuncia, termina tu mensaje exactamente con esta frase: '[SUGERIR_REPORTE]'"""
+        # 2. Historial siempre visible
+        for m in st.session_state.mensajes_bullying:
+            with st.chat_message(m["role"]): st.markdown(m["content"])
+
+        # --- PASO A: CONVERSACIÓN PSICOLÓGICA ---
+        if st.session_state.bullying_step == "conversando":
+            if p_bull := st.chat_input("Desahógate aquí..."):
+                st.session_state.mensajes_bullying.append({"role": "user", "content": p_bull})
                 
-                r = client.chat.completions.create(
-                    model="gpt-4o", 
-                    messages=[{"role":"system","content":sys_psicologa}] + st.session_state.mensajes_bullying
-                )
-                txt_respuesta = r.choices[0].message.content
-                
-                # Detectar si la IA sugirió el reporte
-                if "[SUGERIR_REPORTE]" in txt_respuesta:
-                    txt_respuesta = txt_respuesta.replace("[SUGERIR_REPORTE]", "").strip()
-                    st.session_state.bullying_step = "consentimiento"
-                
-                st.markdown(txt_respuesta)
-                st.session_state.mensajes_bullying.append({"role": "assistant", "content": txt_respuesta})
+                # Lógica de detección de frases de "alivio" o "finalización"
+                frases_alivio = ["gracias", "mejor", "ayudó", "tranquilo", "tranquila", "bien"]
+                usuario_dijo_alivio = any(palabra in p_bull.lower() for palabra in frases_alivio)
+
+                with st.chat_message("assistant"):
+                    # SYSTEM PROMPT MUCHO MÁS PROFESIONAL
+                    sys_psicologa = """Eres una psicóloga clínica experta en trauma infantil y juvenil. 
+                    Tu tono es cálido, pausado y profundamente empático. 
+                    REGLAS:
+                    1. No des consejos genéricos. Valida sus emociones (ej. 'Es normal sentir miedo cuando eso pasa').
+                    2. Haz preguntas que lo inviten a profundizar: '¿Desde cuándo te sientes así?', '¿Hay alguien en quien confíes?'.
+                    3. Solo si el usuario dice que se siente 'mejor', 'agradecido' o si ya desahogó el problema principal, 
+                       debes sugerir que para que esto no vuelva a pasar, se puede reportar de forma anónima.
+                    4. Cuando decidas sugerir el reporte, DEBES terminar tu respuesta con el código: [ACTIVAR_REPORTE]"""
+                    
+                    # Forzamos a la IA si detectamos alivio manualmente en el código
+                    if usuario_dijo_alivio:
+                        p_bull += " (El usuario parece más tranquilo ahora. Es momento de sugerir el reporte anónimo)"
+
+                    r = client.chat.completions.create(
+                        model="gpt-4o", 
+                        messages=[{"role":"system","content":sys_psicologa}] + st.session_state.mensajes_bullying
+                    )
+                    txt_respuesta = r.choices[0].message.content
+                    
+                    # Detección del trigger
+                    if "[ACTIVAR_REPORTE]" in txt_respuesta:
+                        st.session_state.bullying_step = "consentimiento"
+                        txt_respuesta = txt_respuesta.replace("[ACTIVAR_REPORTE]", "").strip()
+                    
+                    st.session_state.mensajes_bullying.append({"role": "assistant", "content": txt_respuesta})
+                    st.rerun()
+
+        # --- PASO B: CONSENTIMIENTO (Se activa por trigger o por flujo) ---
+        if st.session_state.bullying_step == "consentimiento":
+            st.divider()
+            st.info("✨ **AURA te escucha:** Me alegra que te sientas un poco mejor hablando. Para que podamos ayudarte a que esto cambie realmente, ¿te gustaría que enviemos un reporte anónimo a tus profesores?")
+            c1, c2 = st.columns(2)
+            if c1.button("✅ Sí, por favor"):
+                st.session_state.bullying_step = "recopilando_datos"
+                st.rerun()
+            if c2.button("❌ No, solo quería hablar"):
+                st.session_state.bullying_step = "conversando"
+                st.success("Está bien, aquí estaré siempre que necesites desahogarte.")
+                # Limpiamos para evitar bucle
                 st.rerun()
 
-    # Lógica de Consentimiento (Paso 2: ¿Desea denunciar?)
-    elif st.session_state.bullying_step == "consentimiento":
-        st.divider()
-        st.write("💬 **¿Te gustaría denunciar esta situación de manera anónima?**")
-        c1, c2 = st.columns(2)
-        if c1.button("✅ Sí, quiero reportarlo"):
-            st.session_state.bullying_step = "recopilando_datos"
-            st.rerun()
-        if c2.button("❌ No, prefiero solo hablar"):
-            st.session_state.bullying_step = "conversando"
-            st.info("Entiendo perfectamente. Aquí sigo para escucharte siempre que lo necesites.")
-            st.rerun()
+        # --- PASO C: FORMULARIO DE DENUNCIA ---
+        if st.session_state.bullying_step == "recopilando_datos":
+            with st.form("form_denuncia_aura"):
+                st.write("### 📝 Reporte Confidencial")
+                colegio = st.text_input("Tu institución")
+                desc = st.text_area("Cuéntame brevemente qué sucedió (sin nombres si prefieres)")
+                if st.form_submit_button("Enviar a Directivas"):
+                    # Lógica de guardado en Excel
+                    st.session_state.bullying_step = "finalizado"
+                    st.rerun()
 
-    # Lógica de Recopilación (Paso 3: Formulario)
-    elif st.session_state.bullying_step == "recopilando_datos":
-        st.warning("📝 Por favor, completa estos datos para ayudar a las directivas a intervenir.")
-        with st.form("form_denuncia"):
-            col_nom = st.text_input("Nombre de tu colegio")
-            grado_rep = st.text_input("Tu grado actual")
-            nombre_agresor = st.text_input("Nombre de la persona que ocasiona el bullying")
-            rol_agresor = st.selectbox("¿Quién es esa persona?", ["Estudiante", "Profesor", "Directivo"])
-            
-            grado_agresor = ""
-            if rol_agresor == "Estudiante":
-                grado_agresor = st.text_input("¿En qué grado está el estudiante que hace bullying?")
-            
-            if st.form_submit_button("Enviar Reporte Anónimo"):
-                # Aquí se guardaría la información (Simulación)
-                st.session_state.bullying_step = "finalizado"
+        # --- PASO D: CIERRE ---
+        if st.session_state.bullying_step == "finalizado":
+            st.success("Tu valentía es increíble. El reporte ha sido enviado. Todo va a estar bien.")
+            if st.button("Volver a hablar con AURA"):
+                st.session_state.bullying_step = "conversando"
                 st.rerun()
-
-    # Mensaje Final (Paso 4)
-    elif st.session_state.bullying_step == "finalizado":
-        st.success("✨ ¡Hecho! Informaré a las directivas para que tomen cartas en el asunto.")
-        st.balloons()
-        if st.button("Regresar al chat confidencial"):
-            st.session_state.bullying_step = "conversando"
-            st.rerun()
 # OPCIÓN 4: DOCENTES / ADMINISTRATIVOS (EL NUEVO MÓDULO)
 elif seleccion == "4. Docentes/Administrativos":
     if not st.session_state.logged_in:
